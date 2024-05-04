@@ -31,7 +31,7 @@ function calculateDestination(lat, lng, bearing, distance) {
 class Graph {
     constructor() {
         this.nodes = new Map(); //store nodes with their lat, lng as key and neighbors as value
-        this.queue = []; // queue to manage exploration without recursion
+        this.stack = []; // stack to manage exploration without recursion
         this.map = map; //maplibregl map object
     }
 
@@ -41,15 +41,15 @@ class Graph {
     //to do: moving averages should be maintained to ensure it isn't turning too much or climbing/descending too much over 5-10 edges. If so, terminate that path or backtrack.
     //store where have visited before and escape when reach destination. 
     async exploreFrom(startLat, startLng, endLat, endLng, min_distance_between_trails, bounds) {
-        this.queue.push({
+        this.stack.push({
             lat: startLat,
             lng: startLng,
             bearing: 0, //tbd
             elevation: await this.getElevation(startLat, startLng),
             slope: 0
         });
-        while (this.queue.length > 0) {
-            const current = this.queue.shift();
+        while (this.stack.length > 0) {
+            const current = this.stack.pop();
             const key = `${current.lat},${current.lng}`;
             if (this.nodes.has(key) || this.isTooCloseToExistingPath(current.lat, current.lng, min_distance_between_trails)) {
                 continue; //already explored this node or if exploring it would get us too close to other trails. 
@@ -78,16 +78,17 @@ class Graph {
             this.nodes.set(key, neighbors);
 
             //select the next node to explore based on probability
-            const selectedNeighbor = this.weightedRandomSelect(neighbors);
-            if (selectedNeighbor) {
-                this.queue.push({
-                    lat: selectedNeighbor.coordinates[0],
-                    lng: selectedNeighbor.coordinates[1],
-                    bearing: selectedNeighbor.bearing,
-                    elevation: selectedNeighbor.elevation,
-                    slope: selectedNeighbor.slope
-                });
-            }
+            const selectedNeighborIndex = this.weightedRandomSelect(neighbors);
+            const selectedNeighbor = neighbors.splice(selectedNeighborIndex, 1)[0]; //remove the selected neighbor
+
+            //randomly shuffle the neighbors so that when we add them all to the stack, beyond the first favorite element, it is random which comes out next.
+            this.shuffleArray(neighbors);
+
+            neighbors.forEach(neighbor => {
+                this.stack.push(neighbor); //everything that isn't our neighbor to explore first can get piled at the back. 
+            });
+  
+            this.stack.push(selectedNeighbor); //push the selected last to be processed first. it is our "favorite"
         }
     }
 
@@ -111,7 +112,7 @@ class Graph {
         if (s2 > 10) probability *= 0.5;
         if (s2 > 20) probability *= 0.1;
         
-        if (b1-b2 > 40 || b2-b1 < 40) probability *= 0.5;
+        if (Math.abs(b1 - b2) > 40) probability *= 0.5;
     
         return Math.max(0.01, probability);
     }
@@ -124,7 +125,7 @@ class Graph {
             threshold -= neighbors[i].probability;
             //bigger probabilities have a higher chance of making this difference be negative. 
             if (threshold <= 0) {
-                return neighbors[i];
+                return i;
             }
         }
     }
@@ -136,6 +137,13 @@ class Graph {
 
     isTooCloseToExistingPath(lat, lng, minDistance) {
         return false;
+    }
+
+    shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]]; //swap
+        }
     }
 }
 
