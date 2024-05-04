@@ -29,10 +29,31 @@ function calculateDestination(lat, lng, bearing, distance) {
 }
 
 class Graph {
-    constructor() {
+    constructor(map) {
         this.nodes = new Map(); //store nodes with their lat, lng as key and neighbors as value
         this.stack = []; // stack to manage exploration without recursion
         this.map = map; //maplibregl map object
+        this.geojson = {
+            type: "FeatureCollection",
+            features: []
+        };
+
+        this.map.on('load', () => {
+            this.map.addSource('nodes', {
+                type: 'geojson',
+                data: this.geojson
+            });
+
+            this.map.addLayer({
+                id: 'nodes-layer',
+                type: 'circle',
+                source: 'nodes',
+                paint: {
+                    'circle-radius': 5,
+                    'circle-color': '#007cbf'
+                }
+            });
+        });
     }
 
     //explore from the given start point
@@ -56,19 +77,22 @@ class Graph {
                 //we want this check here as opposed to in the graph creation because in another run, the move might be valid. the second check depends on the path taken; we can't say the edge doesn't exist for all 
             }
 
+            this.addPointToMap(current.lat, current.lng); //display where we are exploring
+
             const neighbors = [];
             const currentElevation = current.elevation;
             for (let angle = 0; angle < 360; angle += degrees) {
-                const neighbor = calculateDestination(current.lat, current.lng, angle, edgeSize);
-                const [neiLat, neiLng] = neighbor;
+                const neighbor_coords = calculateDestination(current.lat, current.lng, angle, edgeSize);
+                const [neiLat, neiLng] = neighbor_coords;
                 const neighborElevation = await this.getElevation(neiLat, neiLng);
                 const neighborSlope = this.calculateSlope(currentElevation, neighborElevation, edgeSize);
                 if (this.isWithinBounds(neiLat, neiLng, bounds)) {
                     neighbors.push({
-                        coordinates: neighbor,
+                        lat: neiLat,
+                        lng: neiLng,
                         bearing: angle,
                         slope: neighborSlope,
-                        elevation, neighborElevation,
+                        elevation: neighborElevation,
                         probability: this.calculateProbability(current.lat, current.lng, current.elevation, current.bearing, current.slope, neiLat, neiLng, neighborElevation, angle, neighborSlope)
                     });
                 }
@@ -84,7 +108,7 @@ class Graph {
             //randomly shuffle the neighbors so that when we add them all to the stack, beyond the first favorite element, it is random which comes out next.
             this.shuffleArray(neighbors);
 
-            neighbors.forEach(neighbor => {
+            neighbors.forEach(neighbor => { //looping through each element of neighbors and adding to stack
                 this.stack.push(neighbor); //everything that isn't our neighbor to explore first can get piled at the back. 
             });
   
@@ -130,6 +154,25 @@ class Graph {
         }
     }
 
+    addPointToMap(lat, lng) {
+        const point = {
+            type: 'Feature',
+            geometry: {
+                type: 'Point',
+                coordinates: [lng, lat]
+            },
+            properties: {}
+        };
+
+        this.geojson.features.push(point);
+
+        if (this.map.getSource('nodes')) {
+            this.map.getSource('nodes').setData(this.geojson);
+        } else {
+            console.error('Source not yet available.');
+        }
+    }
+
     isWithinBounds(lat, lng, bounds) {
         return lat >= bounds.minLat && lat <= bounds.maxLat &&
                lng >= bounds.minLng && lng <= bounds.maxLng;
@@ -147,7 +190,55 @@ class Graph {
     }
 }
 
+async function main() {
+    const map = new maplibregl.Map({
+        container: "map",
+        zoom: 15,
+        center: [-80.9, 35.47],
+        pitch: 45,
+        maxPitch: 70,
+        minZoom: 9,
+        style: {
+            version: 8,
+            name: "OSM Mecklenburg GeoPortal",
+            sources: {
+                osm: {
+                    type: "raster",
+                    tiles: ["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"],
+                    tileSize: 256,
+                    attribution: "&copy; OpenStreetMap Contributors",
+                    maxzoom: 19
+                },
+                hillshade_source: {
+                    type: "raster-dem",
+                    encoding: "terrarium",
+                    tiles: [
+                        "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+                    ],
+                    tileSize: 256,
+                    minzoom: 0,
+                    maxzoom: 14
+                }
+            },
+            layers: [
+                { id: "osm", type: "raster", source: "osm" },
+                { id: "hills", type: "hillshade", source: "hillshade_source" }
+            ],
+            terrain: { source: 'hillshade_source', exaggeration: 5 }
+        }
+    });
 
+    map.on('load', async () => {
+        const graph = new Graph(map);
+        const startPoint = [35.223, -80.846]; 
+        const endLat = 35.0; //escape not yet implemented
+        const endLng = -80.0; 
+        const min_distance_between_trails = 50; //meters, not yet enforced
+        const bounds = { minLat: 34.9, maxLat: 35.3, minLng: -81, maxLng: -79.9};
 
-const graph = new Graph();
-const startPoint = [35.0, -80.0];
+        await graph.exploreFrom(startPoint[0], startPoint[1], endLat, endLng, min_distance_between_trails, bounds);
+    });
+}
+
+main();
+
