@@ -69,14 +69,17 @@ class Graph {
             elevation: await this.getElevation(startLat, startLng),
             slope: 0
         });
+
+        var count = 1;
         while (this.stack.length > 0) {
+            if (count > 100) break;
             const current = this.stack.pop();
             const key = `${current.lat},${current.lng}`;
             if (this.nodes.has(key) || this.isTooCloseToExistingPath(current.lat, current.lng, min_distance_between_trails)) {
                 continue; //already explored this node or if exploring it would get us too close to other trails. 
                 //we want this check here as opposed to in the graph creation because in another run, the move might be valid. the second check depends on the path taken; we can't say the edge doesn't exist for all 
             }
-
+            console.error("Adding point to map");
             this.addPointToMap(current.lat, current.lng); //display where we are exploring
 
             const neighbors = [];
@@ -113,6 +116,8 @@ class Graph {
             });
   
             this.stack.push(selectedNeighbor); //push the selected last to be processed first. it is our "favorite"
+
+            count++; //temp to prevent infinite loop
         }
     }
 
@@ -168,6 +173,7 @@ class Graph {
 
         if (this.map.getSource('nodes')) {
             this.map.getSource('nodes').setData(this.geojson);
+            console.log('Point added:', { lat, lng });
         } else {
             console.error('Source not yet available.');
         }
