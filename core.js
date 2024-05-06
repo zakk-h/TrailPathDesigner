@@ -52,10 +52,14 @@ class Graph {
 
         let count = 1;
         while (this.stack.length > 0) {
-            if (count > 100) break;
+            if (count > 500) break;
+            console.log("Iteration " + count);
             const current = this.stack.pop();
+            if (current == null) continue;
             const key = `${current.lat},${current.lng}`;
-            if (this.nodes.has(key) || this.isTooCloseToExistingPath(current.lat, current.lng, min_distance_between_trails)) {
+            if (this.nodes.has(key) || this.isTooCloseToExistingPath(current.lat, current.lng, min_distance_between_trails)) { 
+                console.log("Too close, skipping");
+                //current issue because the implementation will say it is too close because the last point will always be less than the min distance. we need to exclude the last min_distance/edge_size additions.
                 continue; //already explored this node or if exploring it would get us too close to other trails. 
                 //we want this check here as opposed to in the graph creation because in another run, the move might be valid. the second check depends on the path taken; we can't say the edge doesn't exist for all 
             }
@@ -170,7 +174,7 @@ class Graph {
             Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-        return R * c;
+        return (R * c); //nonnegative
     }
 
     isWithinBounds(lat, lng, bounds) {
@@ -179,15 +183,46 @@ class Graph {
     }
 
     isTooCloseToExistingPath(lat, lng, minDistance) {
-        for (const [key, neighbors] of this.nodes.entries()) {
-            const [nodeLat, nodeLng] = key.split(',').map(Number);
+        //java maps preserve order of insertion. we need to split the check into two sections.
+        //we can't just check if the proposed new point is within the distance of all the current points in the trail
+        //because the edge distance is likely less than the minimum distance, and it would say we can't add a new point because 
+        //the proposed point is too close to the last point. so we need to cut off those last points.
+        //but we still need to check the last points to make sure the algorithm is not backtracking.
+        //we check that the distance from the current point to the one before is no more than the size of an edge, for two away, no more than two times the size of the edge......
+        //and so on, for that section. the ceiling may be being overly safe but is a small computational expense for the guarentee while this algorithm is in testing. that particular choice (instead of a floor) can be revisited.
+        const adjustmentFactor = 1.7;
+        const skipLastNPoints = Math.ceil((minDistance / edgeSize) * adjustmentFactor);
+        const turningFactor = 0.9;
+
+        const allKeys = Array.from(this.nodes.keys());
+        const totalKeys = allKeys.length;
+
+        if (totalKeys === 0) {
+            return false; //no nodes yet, so it's never too close to an existing path
+        }
+
+        //determine the starting point for proximity checks
+        const limit = Math.max(0, totalKeys - skipLastNPoints);
+        let nodeCount = 0;
+
+        for (let i = 0; i < limit; i++) {
+            const [nodeLat, nodeLng] = allKeys[i].split(',').map(Number);
             if (this.calculateDistance(lat, lng, nodeLat, nodeLng) < minDistance) {
                 return true;
             }
         }
+
+        for (let i = totalKeys - 1; i >= limit; i--) {
+            nodeCount++;
+            const [nodeLat, nodeLng] = allKeys[i].split(',').map(Number);
+            if (this.calculateDistance(lat, lng, nodeLat, nodeLng) < nodeCount * edgeSize * turningFactor) {
+                return true;
+            }
+        }
+
         return false;
     }
-
+    
 
     shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
@@ -201,13 +236,13 @@ async function main() {
     const map = new maplibregl.Map({
         container: "map",
         zoom: 15,
-        center: [-80.9, 35.47],
+        center: [-81.55219, 35.77098],
         pitch: 45,
         maxPitch: 70,
         minZoom: 9,
         style: {
             version: 8,
-            name: "OSM Mecklenburg GeoPortal",
+            name: "Trail Designer GeoPortal",
             sources: {
                 osm: {
                     type: "raster",
@@ -267,11 +302,11 @@ async function main() {
         });
 
         const graph = new Graph(map, geojson);
-        const startPoint = [35.223, -80.846];
+        const startPoint = [35.77098, -81.55219];
         const endLat = 35.0;
         const endLng = -80.0;
         const min_distance_between_trails = 50;
-        const bounds = { minLat: 34.9, maxLat: 35.3, minLng: -81, maxLng: -79.9 };
+        const bounds = { minLat: 35, maxLat: 36, minLng: -82, maxLng: -81 };
 
         await graph.exploreFrom(startPoint[0], startPoint[1], endLat, endLng, min_distance_between_trails, bounds);
     });
