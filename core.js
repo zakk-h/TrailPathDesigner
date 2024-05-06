@@ -29,31 +29,11 @@ function calculateDestination(lat, lng, bearing, distance) {
 }
 
 class Graph {
-    constructor(map) {
+    constructor(map, geojson) {
         this.nodes = new Map(); //store nodes with their lat, lng as key and neighbors as value
         this.stack = []; // stack to manage exploration without recursion
         this.map = map; //maplibregl map object
-        this.geojson = {
-            type: "FeatureCollection",
-            features: []
-        };
-
-        this.map.on('load', () => {
-            this.map.addSource('nodes', {
-                type: 'geojson',
-                data: this.geojson
-            });
-
-            this.map.addLayer({
-                id: 'nodes-layer',
-                type: 'circle',
-                source: 'nodes',
-                paint: {
-                    'circle-radius': 5,
-                    'circle-color': '#007cbf'
-                }
-            });
-        });
+        this.geojson = geojson;
     }
 
     //explore from the given start point
@@ -70,7 +50,7 @@ class Graph {
             slope: 0
         });
 
-        var count = 1;
+        let count = 1;
         while (this.stack.length > 0) {
             if (count > 100) break;
             const current = this.stack.pop();
@@ -79,7 +59,7 @@ class Graph {
                 continue; //already explored this node or if exploring it would get us too close to other trails. 
                 //we want this check here as opposed to in the graph creation because in another run, the move might be valid. the second check depends on the path taken; we can't say the edge doesn't exist for all 
             }
-            console.error("Adding point to map");
+            console.log('Adding point to map:', { lat: current.lat, lng: current.lng });
             this.addPointToMap(current.lat, current.lng); //display where we are exploring
 
             const neighbors = [];
@@ -171,12 +151,26 @@ class Graph {
 
         this.geojson.features.push(point);
 
-        if (this.map.getSource('nodes')) {
-            this.map.getSource('nodes').setData(this.geojson);
+        if (this.map.getSource('geojson')) {
+            this.map.getSource('geojson').setData(this.geojson);
             console.log('Point added:', { lat, lng });
         } else {
             console.error('Source not yet available.');
         }
+    }
+
+    calculateDistance(lat1, lng1, lat2, lng2) {
+        const R = 6371e3; //earth radius (meters)
+        const φ1 = toRadians(lat1);
+        const φ2 = toRadians(lat2);
+        const Δφ = toRadians(lat2 - lat1);
+        const Δλ = toRadians(lng2 - lng1);
+
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c;
     }
 
     isWithinBounds(lat, lng, bounds) {
@@ -185,8 +179,15 @@ class Graph {
     }
 
     isTooCloseToExistingPath(lat, lng, minDistance) {
+        for (const [key, neighbors] of this.nodes.entries()) {
+            const [nodeLat, nodeLng] = key.split(',').map(Number);
+            if (this.calculateDistance(lat, lng, nodeLat, nodeLng) < minDistance) {
+                return true;
+            }
+        }
         return false;
     }
+
 
     shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
@@ -224,23 +225,53 @@ async function main() {
                     tileSize: 256,
                     minzoom: 0,
                     maxzoom: 14
+                },
+                terrain_source: {
+                    type: "raster-dem",
+                    encoding: "terrarium",
+                    tiles: [
+                        "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+                    ],
+                    tileSize: 256,
+                    minzoom: 0,
+                    maxzoom: 14
                 }
             },
             layers: [
                 { id: "osm", type: "raster", source: "osm" },
                 { id: "hills", type: "hillshade", source: "hillshade_source" }
             ],
-            terrain: { source: 'hillshade_source', exaggeration: 5 }
+            terrain: { source: 'terrain_source', exaggeration: 5 }
         }
     });
 
-    map.on('load', async () => {
-        const graph = new Graph(map);
-        const startPoint = [35.223, -80.846]; 
-        const endLat = 35.0; //escape not yet implemented
-        const endLng = -80.0; 
-        const min_distance_between_trails = 50; //meters, not yet enforced
-        const bounds = { minLat: 34.9, maxLat: 35.3, minLng: -81, maxLng: -79.9};
+    const geojson = {
+        type: "FeatureCollection",
+        features: []
+    };
+
+    map.on("load", async () => {
+        map.addSource('geojson', {
+            type: 'geojson',
+            data: geojson
+        });
+
+        map.addLayer({
+            id: 'measure-points',
+            type: 'circle',
+            source: 'geojson',
+            paint: {
+                'circle-radius': 5,
+                'circle-color': '#007cbf'
+            }
+        });
+
+        const graph = new Graph(map, geojson);
+        const startPoint = [35.223, -80.846];
+        const endLat = 35.0;
+        const endLng = -80.0;
+        const min_distance_between_trails = 50;
+        const bounds = { minLat: 34.9, maxLat: 35.3, minLng: -81, maxLng: -79.9 };
 
         await graph.exploreFrom(startPoint[0], startPoint[1], endLat, endLng, min_distance_between_trails, bounds);
     });
