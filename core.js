@@ -43,8 +43,8 @@ class Graph {
     //explore from the given start point
     //intended to populate graph as we go because we won't need all of it
     //save the parts of the graph we construct for future iterations
-    //to do: moving averages should be maintained to ensure it isn't turning too much or climbing/descending too much over 5-10 edges. If so, terminate that path or backtrack.
-    //store where have visited before and escape when reach destination. 
+    //to do:currently, we are populating the adjacency lists as we go because we will not hit the vast majority of points.
+    //with our loop structure, instead of making a new graph each time, we should keep adding to the previous adjacency lists
     async exploreFrom(startLat, startLng, endLat, endLng, min_distance_between_trails, bounds) {
         this.stack.push({
             lat: startLat,
@@ -319,31 +319,33 @@ class Graph {
         const skipLastNPoints = Math.ceil((minDistance / edgeSize) * adjustmentFactor+2);
         const turningFactor = 0.7;
 
-        const allKeys = Array.from(this.nodes.keys());
-        const totalKeys = allKeys.length;
+        //const allKeys = Array.from(this.nodes.keys());
 
-        if (totalKeys === 0) {
+        if (this.trail.length === 0) {
             return false; //no nodes yet, so it's never too close to an existing path
         }
 
+        const totalTrailPoints = this.trail.length;
+
         //determine the starting point for proximity checks
-        const limit = Math.max(0, totalKeys - skipLastNPoints);
+        const limit = Math.max(0, totalTrailPoints - skipLastNPoints);
         let nodeCount = 0;
 
         for (let i = 0; i < limit; i++) {
-            const [nodeLat, nodeLng] = allKeys[i].split(',').map(Number);
-            if (this.calculateDistance(lat, lng, nodeLat, nodeLng) < minDistance) {
+            const trailPoint = this.trail[i];
+            if (this.calculateDistance(lat, lng, trailPoint.lat, trailPoint.lng) < minDistance) {
                 return true;
             }
         }
 
-        for (let i = totalKeys - 1; i >= limit; i--) {
+        for (let i = totalTrailPoints - 1; i >= limit; i--) {
             nodeCount++;
-            const [nodeLat, nodeLng] = allKeys[i].split(',').map(Number);
-            if (this.calculateDistance(lat, lng, nodeLat, nodeLng) < nodeCount * edgeSize * turningFactor) {
+            const trailPoint = this.trail[i];
+            if (this.calculateDistance(lat, lng, trailPoint.lat, trailPoint.lng) < nodeCount * edgeSize * turningFactor) {
                 return true;
             }
         }
+
 
         return false;
     }
@@ -357,7 +359,17 @@ class Graph {
             totalSlope += Math.abs(this.trail[i].slope);
         }
 
+        //extra details on mileage for the user to observe
+        console.log(`Trail Miles: ${this.getMiles().toFixed(2)} miles`);
+
         return totalSlope / (this.trail.length - 1); //judging a trail by its average slope
+    }
+
+    getMiles() {
+        const totalEdges = this.trail.length - 1;
+        const totalDistanceMeters = totalEdges * edgeSize;
+        const totalDistanceMiles = totalDistanceMeters / 1609.34; //convert meters to miles
+        return totalDistanceMiles;
     }
 
     shuffleArray(array) {
@@ -382,7 +394,7 @@ async function main_looped() {
     const map = new maplibregl.Map({
         container: "map",
         zoom: 15,
-        center: [startPoint[1], startPoint[0]],
+        center: [(startPoint[1]+endPoint[1])/2, (startPoint[0]+endPoint[0])/2],
         pitch: 45,
         maxPitch: 70,
         minZoom: 9,
@@ -463,11 +475,15 @@ async function main_looped() {
 
         let bestTrailScore = Infinity;
         let bestTrailGeoJson = [];
+        let correspondingMiles = 0;
 
+        //to do: (need to make changes in class to make this change work)
+        //graph initialization outside to reuse and expand constructed adjacency list
+        //it is constructed as we go, likely never completed in full, but keeps growing
         let i = 0;
         while (true) {
-            console.log(`Running trail-finding attempt ${i + 1}/${n}...`);
             const graph = new Graph(map, geojson, false);
+            console.log(`Running trail-finding attempt ${i + 1}/${n}...`);
             const endLat = endPoint[0];
             const endLng = endPoint[1];
             await graph.exploreFrom(startPoint[0], startPoint[1], endLat, endLng, min_distance_between_trails, bounds);
@@ -477,6 +493,7 @@ async function main_looped() {
 
             if (trailScore > 0 && trailScore < bestTrailScore) {
                 bestTrailScore = trailScore;
+                correspondingMiles = graph.getMiles();
                 bestTrailGeoJson = [
                     {
                         type: 'Feature',
@@ -496,7 +513,7 @@ async function main_looped() {
                     }))
                 ];
             }
-            if (i > 7 && ((bestTrailScore > 0 && bestTrailScore) < 1000 || i > 20)) break;
+            if (i > 7 && ((bestTrailScore > 0 && bestTrailScore) < 1000 || i > 25)) break;
             i++;
         }
 
@@ -505,6 +522,7 @@ async function main_looped() {
 
         if (bestTrailGeoJson.length > 0) {
             console.log(`Best Trail Score: ${bestTrailScore}`);
+            console.log(`Miles: ${correspondingMiles}`);
         } else {
             console.log("No valid trail found.");
         }
