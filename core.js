@@ -56,6 +56,10 @@ class Graph {
             console.log("Iteration " + count);
             const current = this.stack.pop();
             if (current == null) continue;
+            if (this.calculateDistance(current.lat, current.lng, endLat, endLng) < 50) {
+                console.log("Made it!");
+                break;
+            }
             const key = `${current.lat},${current.lng}`;
             if (this.nodes.has(key) || this.isTooCloseToExistingPath(current.lat, current.lng, min_distance_between_trails)) { 
                 console.log("Too close, skipping");
@@ -80,7 +84,7 @@ class Graph {
                         bearing: angle,
                         slope: neighborSlope,
                         elevation: neighborElevation,
-                        probability: this.calculateProbability(current.lat, current.lng, current.elevation, current.bearing, current.slope, neiLat, neiLng, neighborElevation, angle, neighborSlope)
+                        probability: this.calculateProbability(current.lat, current.lng, current.elevation, current.bearing, current.slope, neiLat, neiLng, neighborElevation, angle, neighborSlope, endLat, endLng)
                     });
                 }
             }
@@ -119,15 +123,64 @@ class Graph {
 
 
     //function to calculate the probability of selecting an edge
-    calculateProbability(lat1, lng1, e1, b1, s1, lat2, lng2, e2, b2, s2) {
+    calculateProbability(lat1, lng1, e1, b1, s1, lat2, lng2, e2, b2, s2, endLat, endLng) {
         let probability = 1;
+
+        s1 = Math.abs(s1);
+        s2 = Math.abs(s2);
     
-        if (s2 > 10) probability *= 0.5;
-        if (s2 > 20) probability *= 0.1;
-        
-        if (Math.abs(b1 - b2) > 40) probability *= 0.5;
+        //adjust slope-based probability
+        if (s2 > 5) probability *= 0.6;
+        else if (s2 > 10) probability *= 0.3;
+        else if (s2 > 20) probability *= 0.05;
+        else if (s2 > 30) probability *= 0.0005;
     
-        return Math.max(0.01, probability);
+        //adjust turn angle-based probability
+        if (Math.abs(b1 - b2) > 40) probability *= 0.8;
+    
+        //calculate bearing from current point to endpoint
+        const bearingToEnd = this.calculateBearing(lat1, lng1, endLat, endLng);
+        const bearingDiff = Math.abs(bearingToEnd - b2);
+    
+        //normalize bearing difference to a value between 0 and 180 degrees
+        const normalizedBearingDiff = bearingDiff > 180 ? 360 - bearingDiff : bearingDiff;
+    
+        //apply compass bias towards endpoint
+        const maxAngleBias = 60; //maximum angle considered acceptable towards endpoint
+        if (normalizedBearingDiff < maxAngleBias) {
+            //think about the below line more
+            const directionBias = (maxAngleBias - normalizedBearingDiff) / maxAngleBias; //closer angles get higher weights
+            probability *= 1 + 2*directionBias; //increase weight
+        } else {
+            probability *= 0.2; //penalize paths too far from the endpoint direction
+        }
+    
+        //increase bias towards the endpoint as we get closer
+        const distanceToEnd1 = this.calculateDistance(lat1, lng1, endLat, endLng);
+        const distanceToEnd2 = this.calculateDistance(lat2, lng2, endLat, endLng);
+        const m = 500; //assume 70 m is a good range to start steering strongly
+        let strongFactor = 1;
+        if (distanceToEnd2 < m) strongFactor = 2;
+        let improvement = false;
+        const diff = distanceToEnd2-distanceToEnd1;
+        if ((diff) < 0) improvement = true;
+        if (improvement) probability*=strongFactor*Math.abs(diff/8);
+        else {
+            probability*= 1/(strongFactor*Math.abs(diff/8));
+        }
+    
+        return Math.max(0.01, probability); //ensure a minimum probability in case something happens
+    }
+    
+    calculateBearing(lat1, lng1, lat2, lng2) {
+        const φ1 = toRadians(lat1);
+        const φ2 = toRadians(lat2);
+        const Δλ = toRadians(lng2 - lng1);
+    
+        const y = Math.sin(Δλ) * Math.cos(φ2);
+        const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+    
+        return (toDegrees(Math.atan2(y, x)) + 360) % 360; //normalize to 0-360 degrees
     }
 
     //randomly choose a neighbor to visit based on the provided probabilities
@@ -303,8 +356,8 @@ async function main() {
 
         const graph = new Graph(map, geojson);
         const startPoint = [35.77098, -81.55219];
-        const endLat = 35.0;
-        const endLng = -80.0;
+        const endLat = 35.76605;
+        const endLng = -81.55599;
         const min_distance_between_trails = 50;
         const bounds = { minLat: 35, maxLat: 36, minLng: -82, maxLng: -81 };
 
