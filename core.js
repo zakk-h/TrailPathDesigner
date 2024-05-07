@@ -30,11 +30,14 @@ function calculateDestination(lat, lng, bearing, distance) {
 }
 
 class Graph {
-    constructor(map, geojson) {
+    constructor(map, geojson, enablePlotting = true) {
         this.nodes = new Map(); //store nodes with their lat, lng as key and neighbors as value
         this.stack = []; // stack to manage exploration without recursion
         this.map = map; //maplibregl map object
         this.geojson = geojson;
+        this.success = false;
+        this.trail = [];
+        this.enablePlotting = enablePlotting;
     }
 
     //explore from the given start point
@@ -51,14 +54,16 @@ class Graph {
             slope: 0,
             costHistory: [0]
         });
-
+        this.trail = [];
         let count = 1;
         while (this.stack.length > 0) {
-            if (count > 500) break;
+            if (count > 1000) break;
             console.log("Iteration " + count);
             const current = this.stack.pop();
             if (current == null) continue;
-            if (this.calculateDistance(current.lat, current.lng, endLat, endLng) < 10) {
+            if (this.calculateDistance(current.lat, current.lng, endLat, endLng) < 20) {
+                this.success = true;
+                this.trail.push(current);
                 console.log("Made it!");
                 break;
             }
@@ -70,7 +75,10 @@ class Graph {
                 //we want this check here as opposed to in the graph creation because in another run, the move might be valid. the second check depends on the path taken; we can't say the edge doesn't exist for all 
             }
             console.log('Adding point to map:', { lat: current.lat, lng: current.lng });
-            this.addPointToMap(current.lat, current.lng); //display where we are exploring
+            if (this.enablePlotting) {
+                this.addPointToMap(current.lat, current.lng); //display where we are exploring
+            } 
+            this.trail.push(current);
 
             const neighbors = [];
             const currentElevation = current.elevation;
@@ -148,8 +156,7 @@ class Graph {
         else if (s2 > 10) probability *= 0.05;
         else if (s2 > 8) probability *= 0.5;
         else if (s2 > 5) probability *= 0.6;
-        if (s2 < 5 && s2 > 1) probability *= 2**s2;
-        
+        else if (s2 < 5 && s2 > 1) probability *= 2**s2;
         else probability *= 5;
     
         //adjust turn angle-based probability
@@ -180,10 +187,10 @@ class Graph {
         const t3 = 50;
         const t4 = 25;
         let strongFactor = 1;
-        if (distanceToEnd2 < t1) strongFactor = 1.1;
-        else if (distanceToEnd2 < t2) strongFactor = 1.25;
-        else if (distanceToEnd2 < t3) strongFactor = 64;
-        else if (distanceToEnd2 < t4) strongFactor = 256;
+        if (distanceToEnd2 < t1) strongFactor = 4;
+        else if (distanceToEnd2 < t2) strongFactor = 16;
+        else if (distanceToEnd2 < t3) strongFactor = 256;
+        else if (distanceToEnd2 < t4) strongFactor = 1024;
         let improvement = false;
         let muchImprovement = false
         const diff = distanceToEnd2-distanceToEnd1;
@@ -335,6 +342,17 @@ class Graph {
         return false;
     }
     
+    evaluateTrail() {
+        if (!this.success) return -1;
+        if (this.trail.length < 2) return -1;
+
+        let totalSlope = 0;
+        for (let i = 1; i < this.trail.length; i++) {
+            totalSlope += Math.abs(this.trail[i].slope);
+        }
+
+        return totalSlope / (this.trail.length - 1); //judging a trail by its average slope
+    }
 
     shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
@@ -346,7 +364,7 @@ class Graph {
 
 async function main() {
     const startPoint = [35.75648779699748, -81.74786525650568];
-    const endPoint = [35.772764023976244, -81.76107500746343];
+    const endPoint = [35.774223418422906, -81.75507496467101];
     
     const map = new maplibregl.Map({
         container: "map",
@@ -420,11 +438,14 @@ async function main() {
         const endLat = endPoint[0];
         const endLng = endPoint[1];
         const min_distance_between_trails = 50;
-        const bounds = { minLat: 35, maxLat: 36, minLng: -82, maxLng: -81 };
+        const point1 = [35.75255431417668, -81.74284623221929];
+        const point2 = [35.75245458243691, -81.76119789811102];
+        const point3 = [35.77691821314957, -81.75652044196116];
+        const point4 = [35.76644529555712, -81.74622554695067]; 
+        const bounds = { minLat: Math.min(point1[0], point2[0], point3[0], point4[0]), maxLat: Math.max(point1[0], point2[0], point3[0], point4[0]), minLng: Math.min(point1[1], point2[1], point3[1], point4[1]), maxLng: Math.max(point1[1], point2[1], point3[1], point4[1]) };
 
         await graph.exploreFrom(startPoint[0], startPoint[1], endLat, endLng, min_distance_between_trails, bounds);
     });
 }
 
 main();
-
