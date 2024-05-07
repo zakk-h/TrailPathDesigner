@@ -52,7 +52,7 @@ class Graph {
             bearing: 0, //tbd
             elevation: await this.getElevation(startLat, startLng),
             slope: 0,
-            costHistory: [0]
+            //costHistory: [0]
         });
         this.trail = [];
         let count = 1;
@@ -97,8 +97,10 @@ class Graph {
                         slope: neighborSlope,
                         elevation: neighborElevation,
                         probability: this.calculateProbability(current.lat, current.lng, current.elevation, current.bearing, current.slope, neiLat, neiLng, neighborElevation, angle, neighborSlope, endLat, endLng),
-                        costHistory: [...current.costHistory, edgeCost]
+                        //costHistory: [...current.costHistory, edgeCost]
                     });
+                } else {
+                    console.log("Out of bounds point proposed");
                 }
             }
 
@@ -111,6 +113,10 @@ class Graph {
 
             //randomly shuffle the neighbors so that when we add them all to the stack, beyond the first favorite element, it is random which comes out next.
             this.shuffleArray(neighbors);
+
+            //clears stack
+            //once we have moved on to the next node successfully (in bounds, not too close to another trail), we've committed to this path, so we don't need anything else in the stack.
+            this.stack.length = 0;
 
             neighbors.forEach(neighbor => { //looping through each element of neighbors and adding to stack
                 this.stack.push(neighbor); //everything that isn't our neighbor to explore first can get piled at the back. 
@@ -157,7 +163,7 @@ class Graph {
         else if (s2 > 8) probability *= 0.5;
         else if (s2 > 5) probability *= 0.6;
         else if (s2 < 5 && s2 > 1) probability *= 2**s2;
-        else probability *= 5;
+        else if (s2  > 0.2) probability *= 5;
     
         //adjust turn angle-based probability
         // Calculate bearing from the new point to the endpoint
@@ -362,10 +368,17 @@ class Graph {
     }
 }
 
-async function main() {
-    const startPoint = [35.75648779699748, -81.74786525650568];
-    const endPoint = [35.774223418422906, -81.75507496467101];
-    
+
+async function main_looped() {
+    const startPoint = [35.7152227111945, -81.57114537337591];
+    const endPoint = [35.702338722644086, -81.54465706883973];
+    const min_distance_between_trails = 50;
+    const point1 = [35.698244589645675, -81.58570200251987];
+    const point2 = [35.701060248003714, -81.54029022748051];
+    const point3 = [35.71653409757802, -81.5447539373979];
+    const point4 = [35.717823449438264, -81.5714074363402]; 
+    const bounds = { minLat: Math.min(point1[0], point2[0], point3[0], point4[0]), maxLat: Math.max(point1[0], point2[0], point3[0], point4[0]), minLng: Math.min(point1[1], point2[1], point3[1], point4[1]), maxLng: Math.max(point1[1], point2[1], point3[1], point4[1]) };    const n = 10;
+
     const map = new maplibregl.Map({
         container: "map",
         zoom: 15,
@@ -375,7 +388,7 @@ async function main() {
         minZoom: 9,
         style: {
             version: 8,
-            name: "Trail Designer GeoPortal",
+            name: "Trail Designer GeoPortal by zakk-h",
             sources: {
                 osm: {
                     type: "raster",
@@ -434,18 +447,68 @@ async function main() {
             }
         });
 
-        const graph = new Graph(map, geojson);
-        const endLat = endPoint[0];
-        const endLng = endPoint[1];
-        const min_distance_between_trails = 50;
-        const point1 = [35.75255431417668, -81.74284623221929];
-        const point2 = [35.75245458243691, -81.76119789811102];
-        const point3 = [35.77691821314957, -81.75652044196116];
-        const point4 = [35.76644529555712, -81.74622554695067]; 
-        const bounds = { minLat: Math.min(point1[0], point2[0], point3[0], point4[0]), maxLat: Math.max(point1[0], point2[0], point3[0], point4[0]), minLng: Math.min(point1[1], point2[1], point3[1], point4[1]), maxLng: Math.max(point1[1], point2[1], point3[1], point4[1]) };
+        map.addLayer({
+            id: 'measure-line',
+            type: 'line',
+            source: 'geojson',
+            layout: {
+                'line-join': 'round',
+                'line-cap': 'round'
+            },
+            paint: {
+                'line-color': '#FF5733',
+                'line-width': 4
+            }
+        });
 
-        await graph.exploreFrom(startPoint[0], startPoint[1], endLat, endLng, min_distance_between_trails, bounds);
+        let bestTrailScore = Infinity;
+        let bestTrailGeoJson = [];
+
+        let i = 0;
+        while (true) {
+            console.log(`Running trail-finding attempt ${i + 1}/${n}...`);
+            const graph = new Graph(map, geojson, false);
+            const endLat = endPoint[0];
+            const endLng = endPoint[1];
+            await graph.exploreFrom(startPoint[0], startPoint[1], endLat, endLng, min_distance_between_trails, bounds);
+
+            const trailScore = graph.evaluateTrail();
+            console.log(`Trail Score ${i + 1}: ${trailScore}`);
+
+            if (trailScore > 0 && trailScore < bestTrailScore) {
+                bestTrailScore = trailScore;
+                bestTrailGeoJson = [
+                    {
+                        type: 'Feature',
+                        geometry: {
+                            type: 'LineString',
+                            coordinates: graph.trail.map(point => [point.lng, point.lat])
+                        },
+                        properties: {}
+                    },
+                    ...graph.trail.map(point => ({
+                        type: 'Feature',
+                        geometry: {
+                            type: 'Point',
+                            coordinates: [point.lng, point.lat]
+                        },
+                        properties: {}
+                    }))
+                ];
+            }
+            if (i > 7 && ((bestTrailScore > 0 && bestTrailScore) < 1000 || i > 20)) break;
+            i++;
+        }
+
+        geojson.features = bestTrailGeoJson;
+        map.getSource('geojson').setData(geojson);
+
+        if (bestTrailGeoJson.length > 0) {
+            console.log(`Best Trail Score: ${bestTrailScore}`);
+        } else {
+            console.log("No valid trail found.");
+        }
     });
 }
 
-main();
+main_looped();
