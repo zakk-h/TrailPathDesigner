@@ -1,6 +1,7 @@
 const earth = 6371e3; //radius of the earth, meters
 const edgeSize = 10; //size of edge between two neigbor points, meters
-const degrees = 10; //increment in degrees for neighbors
+const degrees = 5; //increment in degrees for neighbors
+const movingAvgPeriod = 10;
 
 function toRadians(degrees) {
     return degrees * Math.PI / 180;
@@ -47,7 +48,8 @@ class Graph {
             lng: startLng,
             bearing: 0, //tbd
             elevation: await this.getElevation(startLat, startLng),
-            slope: 0
+            slope: 0,
+            costHistory: [0]
         });
 
         let count = 1;
@@ -56,7 +58,7 @@ class Graph {
             console.log("Iteration " + count);
             const current = this.stack.pop();
             if (current == null) continue;
-            if (this.calculateDistance(current.lat, current.lng, endLat, endLng) < 50) {
+            if (this.calculateDistance(current.lat, current.lng, endLat, endLng) < 10) {
                 console.log("Made it!");
                 break;
             }
@@ -78,13 +80,16 @@ class Graph {
                 const neighborElevation = await this.getElevation(neiLat, neiLng);
                 const neighborSlope = this.calculateSlope(currentElevation, neighborElevation, edgeSize);
                 if (this.isWithinBounds(neiLat, neiLng, bounds)) {
+                    let sign = neighborSlope < 0 ? -1 : 1;
+                    const edgeCost = 2 ** Math.abs(neighborSlope); 
                     neighbors.push({
                         lat: neiLat,
                         lng: neiLng,
                         bearing: angle,
                         slope: neighborSlope,
                         elevation: neighborElevation,
-                        probability: this.calculateProbability(current.lat, current.lng, current.elevation, current.bearing, current.slope, neiLat, neiLng, neighborElevation, angle, neighborSlope, endLat, endLng)
+                        probability: this.calculateProbability(current.lat, current.lng, current.elevation, current.bearing, current.slope, neiLat, neiLng, neighborElevation, angle, neighborSlope, endLat, endLng),
+                        costHistory: [...current.costHistory, edgeCost]
                     });
                 }
             }
@@ -102,6 +107,14 @@ class Graph {
             neighbors.forEach(neighbor => { //looping through each element of neighbors and adding to stack
                 this.stack.push(neighbor); //everything that isn't our neighbor to explore first can get piled at the back. 
             });
+            /*
+            if (this.shouldBacktrack(current.costHistory, movingAvgPeriod)) {
+                console.log("Backtracking");
+                this.colorBacktrackedPoint(current.lat, current.lng); //mark backtracked point yellow
+                this.nodes.delete(key); //remove point from the graph
+                continue; //perform backtracking by skipping
+            }
+            */
   
             this.stack.push(selectedNeighbor); //push the selected last to be processed first. it is our "favorite"
 
@@ -130,44 +143,57 @@ class Graph {
         s2 = Math.abs(s2);
     
         //adjust slope-based probability
-        if (s2 > 5) probability *= 0.6;
-        else if (s2 > 10) probability *= 0.3;
-        else if (s2 > 20) probability *= 0.05;
-        else if (s2 > 30) probability *= 0.0005;
+        if (s2 > 30) probability *= 0.00005;
+        else if (s2 > 20) probability *= 0.0005;
+        else if (s2 > 10) probability *= 0.05;
+        else if (s2 > 8) probability *= 0.5;
+        else if (s2 > 5) probability *= 0.6;
+        if (s2 < 5 && s2 > 1) probability *= 2**s2;
+        
+        else probability *= 5;
     
         //adjust turn angle-based probability
-        if (Math.abs(b1 - b2) > 40) probability *= 0.8;
-    
-        //calculate bearing from current point to endpoint
-        const bearingToEnd = this.calculateBearing(lat1, lng1, endLat, endLng);
-        const bearingDiff = Math.abs(bearingToEnd - b2);
-    
-        //normalize bearing difference to a value between 0 and 180 degrees
-        const normalizedBearingDiff = bearingDiff > 180 ? 360 - bearingDiff : bearingDiff;
-    
-        //apply compass bias towards endpoint
-        const maxAngleBias = 60; //maximum angle considered acceptable towards endpoint
-        if (normalizedBearingDiff < maxAngleBias) {
-            //think about the below line more
-            const directionBias = (maxAngleBias - normalizedBearingDiff) / maxAngleBias; //closer angles get higher weights
-            probability *= 1 + 2*directionBias; //increase weight
-        } else {
-            probability *= 0.2; //penalize paths too far from the endpoint direction
+        // Calculate bearing from the new point to the endpoint
+        const bearingToEnd = this.calculateBearing(lat2, lng2, endLat, endLng);
+        const directionDiffToEnd = Math.abs(((bearingToEnd - b2 + 180) % 360) - 180);
+
+        //apply a bias towards the endpoint direction
+        const maxAngleBias = 90; //maximum angle deviation towards the endpoint
+        const halfMaxAngleBias = maxAngleBias/2
+        if (directionDiffToEnd < halfMaxAngleBias) {
+            const directionBias = (maxAngleBias - directionDiffToEnd) / halfMaxAngleBias;
+            probability *= 1 + 2*Math.abs(directionBias); // Increase weight
+        } else if (directionDiffToEnd < maxAngleBias){
+            probability *= 0.35 //partial penalty
+        } else if (directionDiffToEnd < maxAngleBias+halfMaxAngleBias) {
+            probability *= 0.2
+        }
+        else {
+            probability *= 0.001; //penalize paths too far from the endpoint direction
         }
     
         //increase bias towards the endpoint as we get closer
         const distanceToEnd1 = this.calculateDistance(lat1, lng1, endLat, endLng);
         const distanceToEnd2 = this.calculateDistance(lat2, lng2, endLat, endLng);
-        const m = 500; //assume 70 m is a good range to start steering strongly
+        const t1 = 500; //assume 70 m is a good range to start steering strongly
+        const t2 = 100;
+        const t3 = 50;
+        const t4 = 25;
         let strongFactor = 1;
-        if (distanceToEnd2 < m) strongFactor = 2;
+        if (distanceToEnd2 < t1) strongFactor = 1.1;
+        else if (distanceToEnd2 < t2) strongFactor = 1.25;
+        else if (distanceToEnd2 < t3) strongFactor = 64;
+        else if (distanceToEnd2 < t4) strongFactor = 256;
         let improvement = false;
+        let muchImprovement = false
         const diff = distanceToEnd2-distanceToEnd1;
-        if ((diff) < 0) improvement = true;
-        if (improvement) probability*=strongFactor*Math.abs(diff/8);
+        if ((diff) < -2) improvement = true; //improvement false means less than 2 unit progress in size 10 edge
+        if ((diff < -5)) muchImprovement = true;
+        if (improvement) probability*=strongFactor*Math.abs(diff/8+1);
         else {
-            probability*= 1/(strongFactor*Math.abs(diff/8));
+            probability*= 1/(strongFactor*Math.abs(diff/8+1));
         }
+        if (muchImprovement) probability*=4
     
         return Math.max(0.01, probability); //ensure a minimum probability in case something happens
     }
@@ -195,6 +221,39 @@ class Graph {
             }
         }
     }
+
+    /*
+    shouldBacktrack(costHistory, period) {
+        if (costHistory.length < period) return false;
+    
+        //sum the last `period` many elements
+        const recentSum = costHistory.slice(-period).reduce((a, b) => a + b, 0);
+    
+        return recentSum > (32) * period; //each cost can be no more than 32 on average
+    }
+
+    colorBacktrackedPoint(lat, lng) {
+        const point = {
+            type: 'Feature',
+            geometry: {
+                type: 'Point',
+                coordinates: [lng, lat]
+            },
+            properties: {
+                'circle-color': '#FFEB3B' //yellow color for backtracked points
+            }
+        };
+    
+        this.geojson.features.push(point);
+    
+        if (this.map.getSource('geojson')) {
+            this.map.getSource('geojson').setData(this.geojson);
+            console.log('Backtracked point marked:', { lat, lng });
+        } else {
+            console.error('Source not yet available.');
+        }
+    }
+    */
 
     addPointToMap(lat, lng) {
         const point = {
@@ -244,8 +303,8 @@ class Graph {
         //we check that the distance from the current point to the one before is no more than the size of an edge, for two away, no more than two times the size of the edge......
         //and so on, for that section. the ceiling may be being overly safe but is a small computational expense for the guarentee while this algorithm is in testing. that particular choice (instead of a floor) can be revisited.
         const adjustmentFactor = 1.7;
-        const skipLastNPoints = Math.ceil((minDistance / edgeSize) * adjustmentFactor);
-        const turningFactor = 0.9;
+        const skipLastNPoints = Math.ceil((minDistance / edgeSize) * adjustmentFactor+2);
+        const turningFactor = 0.7;
 
         const allKeys = Array.from(this.nodes.keys());
         const totalKeys = allKeys.length;
@@ -286,10 +345,13 @@ class Graph {
 }
 
 async function main() {
+    const startPoint = [35.75648779699748, -81.74786525650568];
+    const endPoint = [35.772764023976244, -81.76107500746343];
+    
     const map = new maplibregl.Map({
         container: "map",
         zoom: 15,
-        center: [-81.55219, 35.77098],
+        center: [startPoint[1], startPoint[0]],
         pitch: 45,
         maxPitch: 70,
         minZoom: 9,
@@ -355,9 +417,8 @@ async function main() {
         });
 
         const graph = new Graph(map, geojson);
-        const startPoint = [35.77098, -81.55219];
-        const endLat = 35.76605;
-        const endLng = -81.55599;
+        const endLat = endPoint[0];
+        const endLng = endPoint[1];
         const min_distance_between_trails = 50;
         const bounds = { minLat: 35, maxLat: 36, minLng: -82, maxLng: -81 };
 
