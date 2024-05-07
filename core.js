@@ -68,7 +68,7 @@ class Graph {
                 break;
             }
             const key = `${current.lat},${current.lng}`;
-            if (this.nodes.has(key) || this.isTooCloseToExistingPath(current.lat, current.lng, min_distance_between_trails)) { 
+            if (this.nodes.has(key) || this.isTooCloseToExistingPath(current.lat, current.lng, min_distance_between_trails)) {
                 console.log("Too close, skipping");
                 //current issue because the implementation will say it is too close because the last point will always be less than the min distance. we need to exclude the last min_distance/edge_size additions.
                 continue; //already explored this node or if exploring it would get us too close to other trails. 
@@ -77,7 +77,7 @@ class Graph {
             console.log('Adding point to map:', { lat: current.lat, lng: current.lng });
             if (this.enablePlotting) {
                 this.addPointToMap(current.lat, current.lng); //display where we are exploring
-            } 
+            }
             this.trail.push(current);
 
             const neighbors = [];
@@ -89,7 +89,7 @@ class Graph {
                 const neighborSlope = this.calculateSlope(currentElevation, neighborElevation, edgeSize);
                 if (this.isWithinBounds(neiLat, neiLng, bounds)) {
                     let sign = neighborSlope < 0 ? -1 : 1;
-                    const edgeCost = 2 ** Math.abs(neighborSlope); 
+                    const edgeCost = 2 ** Math.abs(neighborSlope);
                     neighbors.push({
                         lat: neiLat,
                         lng: neiLng,
@@ -129,7 +129,7 @@ class Graph {
                 continue; //perform backtracking by skipping
             }
             */
-  
+
             this.stack.push(selectedNeighbor); //push the selected last to be processed first. it is our "favorite"
 
             count++; //temp to prevent infinite loop
@@ -142,7 +142,7 @@ class Graph {
             resolve(elevation);
         });
     }
-    
+
     //as a percent
     calculateSlope(elevation1, elevation2, distance) {
         return ((elevation2 - elevation1) / distance) * 100;
@@ -155,16 +155,16 @@ class Graph {
 
         s1 = Math.abs(s1);
         s2 = Math.abs(s2);
-    
+
         //adjust slope-based probability
         if (s2 > 30) probability *= 0.00005;
         else if (s2 > 20) probability *= 0.0005;
         else if (s2 > 10) probability *= 0.05;
         else if (s2 > 8) probability *= 0.5;
         else if (s2 > 5) probability *= 0.6;
-        else if (s2 < 5 && s2 > 1) probability *= 2**s2;
-        else if (s2  > 0.2) probability *= 5;
-    
+        else if (s2 < 5 && s2 > 1) probability *= 2 ** s2;
+        else if (s2 > 0.2) probability *= 5;
+
         //adjust turn angle-based probability
         // Calculate bearing from the new point to the endpoint
         const bearingToEnd = this.calculateBearing(lat2, lng2, endLat, endLng);
@@ -172,19 +172,19 @@ class Graph {
 
         //apply a bias towards the endpoint direction
         const maxAngleBias = 90; //maximum angle deviation towards the endpoint
-        const halfMaxAngleBias = maxAngleBias/2
+        const halfMaxAngleBias = maxAngleBias / 2
         if (directionDiffToEnd < halfMaxAngleBias) {
             const directionBias = (maxAngleBias - directionDiffToEnd) / halfMaxAngleBias;
-            probability *= 1 + 2*Math.abs(directionBias); // Increase weight
-        } else if (directionDiffToEnd < maxAngleBias){
+            probability *= 1 + 2 * Math.abs(directionBias); // Increase weight
+        } else if (directionDiffToEnd < maxAngleBias) {
             probability *= 0.35 //partial penalty
-        } else if (directionDiffToEnd < maxAngleBias+halfMaxAngleBias) {
+        } else if (directionDiffToEnd < maxAngleBias + halfMaxAngleBias) {
             probability *= 0.2
         }
         else {
             probability *= 0.001; //penalize paths too far from the endpoint direction
         }
-    
+
         //increase bias towards the endpoint as we get closer
         const distanceToEnd1 = this.calculateDistance(lat1, lng1, endLat, endLng);
         const distanceToEnd2 = this.calculateDistance(lat2, lng2, endLat, endLng);
@@ -199,26 +199,26 @@ class Graph {
         else if (distanceToEnd2 < t4) strongFactor = 1024;
         let improvement = false;
         let muchImprovement = false
-        const diff = distanceToEnd2-distanceToEnd1;
+        const diff = distanceToEnd2 - distanceToEnd1;
         if ((diff) < -2) improvement = true; //improvement false means less than 2 unit progress in size 10 edge
         if ((diff < -5)) muchImprovement = true;
-        if (improvement) probability*=strongFactor*Math.abs(diff/8+1);
+        if (improvement) probability *= strongFactor * Math.abs(diff / 8 + 1);
         else {
-            probability*= 1/(strongFactor*Math.abs(diff/8+1));
+            probability *= 1 / (strongFactor * Math.abs(diff / 8 + 1));
         }
-        if (muchImprovement) probability*=4
-    
+        if (muchImprovement) probability *= 4
+
         return Math.max(0.01, probability); //ensure a minimum probability in case something happens
     }
-    
+
     calculateBearing(lat1, lng1, lat2, lng2) {
         const φ1 = toRadians(lat1);
         const φ2 = toRadians(lat2);
         const Δλ = toRadians(lng2 - lng1);
-    
+
         const y = Math.sin(Δλ) * Math.cos(φ2);
         const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-    
+
         return (toDegrees(Math.atan2(y, x)) + 360) % 360; //normalize to 0-360 degrees
     }
 
@@ -304,7 +304,7 @@ class Graph {
 
     isWithinBounds(lat, lng, bounds) {
         return lat >= bounds.minLat && lat <= bounds.maxLat &&
-               lng >= bounds.minLng && lng <= bounds.maxLng;
+            lng >= bounds.minLng && lng <= bounds.maxLng;
     }
 
     isTooCloseToExistingPath(lat, lng, minDistance) {
@@ -316,7 +316,7 @@ class Graph {
         //we check that the distance from the current point to the one before is no more than the size of an edge, for two away, no more than two times the size of the edge......
         //and so on, for that section. the ceiling may be being overly safe but is a small computational expense for the guarentee while this algorithm is in testing. that particular choice (instead of a floor) can be revisited.
         const adjustmentFactor = 1.7;
-        const skipLastNPoints = Math.ceil((minDistance / edgeSize) * adjustmentFactor+2);
+        const skipLastNPoints = Math.ceil((minDistance / edgeSize) * adjustmentFactor + 2);
         const turningFactor = 0.7;
 
         //const allKeys = Array.from(this.nodes.keys());
@@ -349,7 +349,7 @@ class Graph {
 
         return false;
     }
-    
+
     evaluateTrail() {
         if (!this.success) return -1;
         if (this.trail.length < 2) return -1;
@@ -388,13 +388,13 @@ async function main_looped() {
     const point1 = [35.698244589645675, -81.58570200251987];
     const point2 = [35.701060248003714, -81.54029022748051];
     const point3 = [35.71653409757802, -81.5447539373979];
-    const point4 = [35.717823449438264, -81.5714074363402]; 
-    const bounds = { minLat: Math.min(point1[0], point2[0], point3[0], point4[0]), maxLat: Math.max(point1[0], point2[0], point3[0], point4[0]), minLng: Math.min(point1[1], point2[1], point3[1], point4[1]), maxLng: Math.max(point1[1], point2[1], point3[1], point4[1]) };    const n = 10;
+    const point4 = [35.717823449438264, -81.5714074363402];
+    const bounds = { minLat: Math.min(point1[0], point2[0], point3[0], point4[0]), maxLat: Math.max(point1[0], point2[0], point3[0], point4[0]), minLng: Math.min(point1[1], point2[1], point3[1], point4[1]), maxLng: Math.max(point1[1], point2[1], point3[1], point4[1]) }; const n = 10;
 
     const map = new maplibregl.Map({
         container: "map",
         zoom: 15,
-        center: [(startPoint[1]+endPoint[1])/2, (startPoint[0]+endPoint[0])/2],
+        center: [(startPoint[1] + endPoint[1]) / 2, (startPoint[0] + endPoint[0]) / 2],
         pitch: 45,
         maxPitch: 70,
         minZoom: 9,
