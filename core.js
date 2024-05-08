@@ -1,6 +1,6 @@
 const earth = 6371e3; //radius of the earth, meters
 const edgeSize = 35; //size of edge between two neigbor points, meters
-const degrees = 5; //increment in degrees for neighbors
+const degrees = 1; //increment in degrees for neighbors
 const movingAvgPeriod = 10;
 
 function toRadians(degrees) {
@@ -156,21 +156,26 @@ class Graph {
         s1 = Math.abs(s1);
         s2 = Math.abs(s2);
 
+        const latDiff = lat2-lat1;
+        const lngDiff = lng2-lng1;
+
         //adjust slope-based probability
         let baseProbability;
 
         if (s2 > 30) {
-            baseProbability = 0.000005;
+            probability = 0;
+            baseProbability = 0.0000000000000005;
         } else if (s2 > 20) {
-            baseProbability = 0.00005;
+            probability = 0;
+            baseProbability = 0.000000000005;
         } else if (s2 > 10) {
-            baseProbability = 0.005;
+            baseProbability = 0.0000000005;
         } else if (s2 > 8) {
             baseProbability = 0.5;
         } else if (s2 > 5) {
             baseProbability = 0.6;
         } else if (s2 > 1) {
-            baseProbability = 128;
+            baseProbability = 200;
         } else if (s2 > 0.0) {
             baseProbability = 500;
         } else {
@@ -193,7 +198,7 @@ class Graph {
         */
 
         //adjust turn angle-based probability
-        // Calculate bearing from the new point to the endpoint
+        //calculate bearing from the new point to the endpoint
         const bearingToEnd = this.calculateBearing(lat2, lng2, endLat, endLng);
         const directionDiffToEnd = Math.abs(((bearingToEnd - b2 + 180) % 360) - 180);
 
@@ -234,6 +239,36 @@ class Graph {
             probability *= 1 / (strongFactor * Math.abs(diff / 8 + 1));
         }
         if (muchImprovement) probability *= 4
+
+
+
+        //looking into the future
+        /*
+        const mult = 5;
+        
+        let baseProbability2;
+        let futureSlope;
+        let decayFactor2;
+        let finalProbability2;
+
+        let thereExistsNotSteepSlope = false;
+        //if we find one in the loops that is <2 percent, make true, and insanely increase probability. Otherwise, insanely decrease.
+        //check 360 degrees around, not just what I'm doing here.
+        for (let i = mult; i < mult+0.1; i+=0.5) { //make loop be 270 forward degrees or 180 forward degrees. or something.
+            futureSlope = Math.abs(this.calculateSlope(e2, this.getElevation(lat2+i*latDiff, lng2+lngDiff), this.calculateDistance(lat2+latDiff, lng2+i*lngDiff, lat2, lng2)));
+            if (futureSlope < 2) thereExistsNotSteepSlope = true;
+        }
+        for (let i = 0; i < mult; i+=0.5) { //make loop be 270 forward degrees or 180 forward degrees. or something.
+            futureSlope = Math.abs(this.calculateSlope(e2, this.getElevation(lat2+latDiff, lng2+i*lngDiff), this.calculateDistance(lat2+latDiff, lng2+i*lngDiff, lat2, lng2)));
+            if (futureSlope < 2) thereExistsNotSteepSlope = true;
+        }
+
+        if(thereExistsNotSteepSlope) probability*=5;
+        else probability *= 0.2;
+        */
+
+
+
 
         return Math.max(0.01, probability); //ensure a minimum probability in case something happens
     }
@@ -529,7 +564,7 @@ async function main_looped() {
                     }))
                 ];
             }
-            if (i > 9 && ((bestTrailScore > 0 && bestTrailScore) < 1000 || i > 25)) break;
+            if (i > 8 && ((bestTrailScore > 0 && bestTrailScore) < 1000 || i > 35)) break;
             i++;
         }
 
