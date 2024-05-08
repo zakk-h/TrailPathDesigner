@@ -1,5 +1,5 @@
 const earth = 6371e3; //radius of the earth, meters
-const edgeSize = 12; //size of edge between two neigbor points, meters
+const edgeSize = 35; //size of edge between two neigbor points, meters
 const degrees = 5; //increment in degrees for neighbors
 const movingAvgPeriod = 10;
 
@@ -157,13 +157,40 @@ class Graph {
         s2 = Math.abs(s2);
 
         //adjust slope-based probability
-        if (s2 > 30) probability *= 0.000000000000000000005;
-        else if (s2 > 20) probability *= 0.000000000000005;
-        else if (s2 > 10) probability *= 0.0000000000005;
-        else if (s2 > 8) probability *= 0.0005;
+        let baseProbability;
+
+        if (s2 > 30) {
+            baseProbability = 0.000005;
+        } else if (s2 > 20) {
+            baseProbability = 0.00005;
+        } else if (s2 > 10) {
+            baseProbability = 0.005;
+        } else if (s2 > 8) {
+            baseProbability = 0.5;
+        } else if (s2 > 5) {
+            baseProbability = 0.6;
+        } else if (s2 > 1) {
+            baseProbability = 128;
+        } else if (s2 > 0.0) {
+            baseProbability = 500;
+        } else {
+            baseProbability = 1;
+        }
+
+        const decayFactor = Math.exp(-0.2 * s2);
+
+        const finalProbability = baseProbability * decayFactor;
+    
+        probability *= Math.max(finalProbability, Number.EPSILON);    
+        /*
+        if (s2 > 30) probability *= 0.000005;
+        else if (s2 > 20) probability *= 0.00005;
+        else if (s2 > 10) probability *= 0.005;
+        else if (s2 > 8) probability *= 0.5;
         else if (s2 > 5) probability *= 0.6;
         else if (s2 < 5 && s2 > 1) probability *= 2 ** s2;
         else if (s2 > 0.2) probability *= 5;
+        */
 
         //adjust turn angle-based probability
         // Calculate bearing from the new point to the endpoint
@@ -177,12 +204,12 @@ class Graph {
             const directionBias = (maxAngleBias - directionDiffToEnd) / halfMaxAngleBias;
             probability *= 1 + 2 * Math.abs(directionBias); // Increase weight
         } else if (directionDiffToEnd < maxAngleBias) {
-            probability *= 0.55 //partial penalty
+            probability *= 0.35 //partial penalty
         } else if (directionDiffToEnd < maxAngleBias + halfMaxAngleBias) {
-            probability *= 0.35
+            probability *= 0.2
         }
         else {
-            probability *= 0.01; //penalize paths too far from the endpoint direction
+            probability *= 0.001; //penalize paths too far from the endpoint direction
         }
 
         //increase bias towards the endpoint as we get closer
@@ -193,10 +220,10 @@ class Graph {
         const t3 = 50;
         const t4 = 25;
         let strongFactor = 1;
-        if (distanceToEnd2 < t1) strongFactor = 1.5;
-        else if (distanceToEnd2 < t2) strongFactor = 4;
-        else if (distanceToEnd2 < t3) strongFactor = 512;
-        else if (distanceToEnd2 < t4) strongFactor = 2048;
+        if (distanceToEnd2 < t1) strongFactor = 4;
+        else if (distanceToEnd2 < t2) strongFactor = 16;
+        else if (distanceToEnd2 < t3) strongFactor = 256;
+        else if (distanceToEnd2 < t4) strongFactor = 1024;
         let improvement = false;
         let muchImprovement = false
         const diff = distanceToEnd2 - distanceToEnd1;
@@ -206,7 +233,7 @@ class Graph {
         else {
             probability *= 1 / (strongFactor * Math.abs(diff / 8 + 1));
         }
-        if (muchImprovement) probability *= 2.5
+        if (muchImprovement) probability *= 4
 
         return Math.max(0.01, probability); //ensure a minimum probability in case something happens
     }
@@ -317,7 +344,7 @@ class Graph {
         //and so on, for that section. the ceiling may be being overly safe but is a small computational expense for the guarentee while this algorithm is in testing. that particular choice (instead of a floor) can be revisited.
         const adjustmentFactor = 1.7;
         const skipLastNPoints = Math.ceil((minDistance / edgeSize) * adjustmentFactor + 2);
-        const turningFactor = 0.6;
+        const turningFactor = 0.7;
 
         //const allKeys = Array.from(this.nodes.keys());
 
@@ -362,7 +389,7 @@ class Graph {
         //extra details on mileage for the user to observe
         console.log(`Trail Miles: ${this.getMiles().toFixed(2)} miles`);
 
-        return totalSlope / (this.trail.length - 1); //judging a trail by its average slope
+        return (totalSlope - this.trail.length) / (this.trail.length - 1); //judging a trail by its average slope
     }
 
     getMiles() {
@@ -379,7 +406,6 @@ class Graph {
         }
     }
 }
-
 
 async function main_looped() {
     const startPoint = [35.7152227111945, -81.57114537337591];
@@ -503,7 +529,7 @@ async function main_looped() {
                     }))
                 ];
             }
-            if (i > 8 && ((bestTrailScore > 0 && bestTrailScore) < 1000 || i > 25)) break;
+            if (i > 9 && ((bestTrailScore > 0 && bestTrailScore) < 1000 || i > 25)) break;
             i++;
         }
 
