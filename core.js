@@ -1,5 +1,5 @@
 const earth = 6371e3; //radius of the earth, meters
-const edgeSize = 10; //size of edge between two neigbor points, meters
+const edgeSize = 12; //size of edge between two neigbor points, meters
 const degrees = 5; //increment in degrees for neighbors
 const movingAvgPeriod = 10;
 
@@ -157,10 +157,10 @@ class Graph {
         s2 = Math.abs(s2);
 
         //adjust slope-based probability
-        if (s2 > 30) probability *= 0.00005;
-        else if (s2 > 20) probability *= 0.0005;
-        else if (s2 > 10) probability *= 0.05;
-        else if (s2 > 8) probability *= 0.5;
+        if (s2 > 30) probability *= 0.000000000000000000005;
+        else if (s2 > 20) probability *= 0.000000000000005;
+        else if (s2 > 10) probability *= 0.0000000000005;
+        else if (s2 > 8) probability *= 0.0005;
         else if (s2 > 5) probability *= 0.6;
         else if (s2 < 5 && s2 > 1) probability *= 2 ** s2;
         else if (s2 > 0.2) probability *= 5;
@@ -177,12 +177,12 @@ class Graph {
             const directionBias = (maxAngleBias - directionDiffToEnd) / halfMaxAngleBias;
             probability *= 1 + 2 * Math.abs(directionBias); // Increase weight
         } else if (directionDiffToEnd < maxAngleBias) {
-            probability *= 0.35 //partial penalty
+            probability *= 0.55 //partial penalty
         } else if (directionDiffToEnd < maxAngleBias + halfMaxAngleBias) {
-            probability *= 0.2
+            probability *= 0.35
         }
         else {
-            probability *= 0.001; //penalize paths too far from the endpoint direction
+            probability *= 0.01; //penalize paths too far from the endpoint direction
         }
 
         //increase bias towards the endpoint as we get closer
@@ -193,10 +193,10 @@ class Graph {
         const t3 = 50;
         const t4 = 25;
         let strongFactor = 1;
-        if (distanceToEnd2 < t1) strongFactor = 4;
-        else if (distanceToEnd2 < t2) strongFactor = 16;
-        else if (distanceToEnd2 < t3) strongFactor = 256;
-        else if (distanceToEnd2 < t4) strongFactor = 1024;
+        if (distanceToEnd2 < t1) strongFactor = 1.5;
+        else if (distanceToEnd2 < t2) strongFactor = 4;
+        else if (distanceToEnd2 < t3) strongFactor = 512;
+        else if (distanceToEnd2 < t4) strongFactor = 2048;
         let improvement = false;
         let muchImprovement = false
         const diff = distanceToEnd2 - distanceToEnd1;
@@ -206,7 +206,7 @@ class Graph {
         else {
             probability *= 1 / (strongFactor * Math.abs(diff / 8 + 1));
         }
-        if (muchImprovement) probability *= 4
+        if (muchImprovement) probability *= 2.5
 
         return Math.max(0.01, probability); //ensure a minimum probability in case something happens
     }
@@ -317,7 +317,7 @@ class Graph {
         //and so on, for that section. the ceiling may be being overly safe but is a small computational expense for the guarentee while this algorithm is in testing. that particular choice (instead of a floor) can be revisited.
         const adjustmentFactor = 1.7;
         const skipLastNPoints = Math.ceil((minDistance / edgeSize) * adjustmentFactor + 2);
-        const turningFactor = 0.7;
+        const turningFactor = 0.6;
 
         //const allKeys = Array.from(this.nodes.keys());
 
@@ -384,7 +384,7 @@ class Graph {
 async function main_looped() {
     const startPoint = [35.7152227111945, -81.57114537337591];
     const endPoint = [35.702338722644086, -81.54465706883973];
-    const min_distance_between_trails = 50;
+    const min_distance_between_trails = 33;
     const point1 = [35.698244589645675, -81.58570200251987];
     const point2 = [35.701060248003714, -81.54029022748051];
     const point3 = [35.71653409757802, -81.5447539373979];
@@ -450,16 +450,6 @@ async function main_looped() {
         });
 
         map.addLayer({
-            id: 'measure-points',
-            type: 'circle',
-            source: 'geojson',
-            paint: {
-                'circle-radius': 5,
-                'circle-color': '#007cbf'
-            }
-        });
-
-        map.addLayer({
             id: 'measure-line',
             type: 'line',
             source: 'geojson',
@@ -469,7 +459,7 @@ async function main_looped() {
             },
             paint: {
                 'line-color': '#FF5733',
-                'line-width': 4
+                'line-width': 5
             }
         });
 
@@ -483,7 +473,7 @@ async function main_looped() {
         let i = 0;
         while (true) {
             const graph = new Graph(map, geojson, false);
-            console.log(`Running trail-finding attempt ${i + 1}/${n}...`);
+            console.log(`Running trail-finding attempt ${i + 1}/...`);
             const endLat = endPoint[0];
             const endLng = endPoint[1];
             await graph.exploreFrom(startPoint[0], startPoint[1], endLat, endLng, min_distance_between_trails, bounds);
@@ -513,7 +503,7 @@ async function main_looped() {
                     }))
                 ];
             }
-            if (i > 7 && ((bestTrailScore > 0 && bestTrailScore) < 1000 || i > 25)) break;
+            if (i > 8 && ((bestTrailScore > 0 && bestTrailScore) < 1000 || i > 25)) break;
             i++;
         }
 
