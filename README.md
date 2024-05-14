@@ -17,7 +17,7 @@ Trail Designer GeoPortal is an advanced pathfinding algorithm designed for trail
 
 ## Time Complexity
 
-The time complexity of the Trail Designer GeoPortal algorithm in terms of the number of nodes (N) \(O(N^2)\). This is because for each point processed, the algorithm may need to check proximity against all previously visited points, resulting in a quadratic relationship. There are a fixed number of edges - a linear function of N.
+The time complexity of the Trail Designer GeoPortal algorithm in terms of the number of nodes is O(N^2). This is because for each point processed, the algorithm may need to check proximity against all previously visited points, resulting in a quadratic relationship. There are a fixed number of edges - a linear function of N.
 
 ### Potential Optimizations
 
