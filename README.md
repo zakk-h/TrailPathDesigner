@@ -4,7 +4,7 @@ This algorithm can be visualized on [the Github Pages site for the repository](h
 
 ## Overview
 
-Trail Designer GeoPortal is an advanced pathfinding algorithm designed for trail creation on geographical terrains. This algorithm seeks to maximize trail mileage while adhering to constraints such as slope, grade, and turn angles. The algorithm dynamically generates paths based on elevation data, ensuring minimal slopes and optimal routing towards designated endpoints. It uses an internal compass that strengthens its directional bias as it progresses towards the endpoint, steering the trail in the right direction.
+Trail Designer GeoPortal is a greedy pathfinding algorithm designed for trail creation on geographical terrains. This algorithm seeks to maximize trail mileage while adhering to constraints such as slope, grade, and turn angles. The algorithm dynamically generates paths based on elevation data, ensuring minimal slopes and optimal routing towards designated endpoints. It uses an internal compass that strengthens its directional bias as it progresses towards the endpoint, steering the trail in the right direction.
 
 ## Features
 
@@ -27,7 +27,7 @@ The time complexity of the Trail Designer GeoPortal algorithm in terms of the nu
 
 1. **Nested Algorithm:** Implement a nested algorithm to consider multiple steps ahead rather than just the immediate next step. The current implementation creates probabilities that are locally favorable but does not adequately consider future steps. A more forward-thinking approach could improve the overall quality and efficiency of the trails.
 
-2. **Backtracking Mechanism:** Develop a robust backtracking mechanism. The current implementation lacks backtracking due to the complexity of determining the optimal point to backtrack to. This involves modeling decision points where the path starts to worsen, but it also needs to address situations where an initial wrong turn can set up the trail for failure. Effective backtracking would require understanding and quantifying when and where the decisions start to deteriorate.
+2. **Backtracking Mechanism:** Develop a robust backtracking mechanism. The current implementation lacks backtracking due to the complexity of determining the optimal point to backtrack to. This involves modeling decision points where the path starts to worsen, but it also needs to address situations where an initial wrong turn can set up the trail for failure. Effective backtracking would require understanding and quantifying when and where the decisions start to deteriorate. However, the current greedy approach is beneficial concerning runtime and has reasonable outputs for making local decisions.
 
 3. **Lookahead Heuristics:** Implement heuristics that look farther ahead than just one step. This can help in making more informed decisions that consider the long-term impact of each move. By evaluating the potential future states, the algorithm can avoid paths that might lead to suboptimal or infeasible solutions later on.
 
